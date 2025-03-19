@@ -1,0 +1,23 @@
+{
+  "name": "youtube-mcp-server",
+  "version": "1.0.0",
+  "description": "Un servidor MCP para interactuar con YouTube",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1"
+  },
+  "keywords": [
+    "mcp",
+    "youtube",
+    "claude",
+    "ai"
+  ],
+  "author": "Nocodeboy",
+  "license": "MIT"
+}
