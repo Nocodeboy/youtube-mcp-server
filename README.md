@@ -161,6 +161,12 @@ Las contribuciones son bienvenidas. Puedes colaborar de varias formas:
 3. Enviando pull requests con mejoras o correcciones
 4. Mejorando la documentación
 
+## Apóyame
+
+Si encuentras útil este proyecto y quieres mostrar tu apoyo:
+
+<a href="https://www.buymeacoffee.com/germanhuertas" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
 ## Licencia
 
 Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo LICENSE para más detalles.
