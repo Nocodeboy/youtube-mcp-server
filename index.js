@@ -236,3 +236,92 @@ class YouTubeMCPServer {
         ],
       })
     );
+
+    // Manejador para llamadas a herramientas
+    this.server.setRequestHandler(
+      CallToolRequestSchema,
+      async (request) => {
+        try {
+          switch (request.params.name) {
+            case "search_videos":
+              return await this.handleSearchVideos(request.params.arguments);
+            
+            case "get_video_details":
+              return await this.handleGetVideoDetails(request.params.arguments);
+            
+            case "get_channel_details":
+              return await this.handleGetChannelDetails(request.params.arguments);
+            
+            case "search_channels":
+              return await this.handleSearchChannels(request.params.arguments);
+            
+            default:
+              throw new McpError(
+                ErrorCode.MethodNotFound,
+                `Unknown tool: ${request.params.name}`
+              );
+          }
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `YouTube API error: ${error.response?.data?.error?.message || error.message}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          throw error;
+        }
+      }
+    );
+  }
+
+  // Manejadores para cada herramienta
+
+  async handleSearchVideos(args) {
+    if (!args || typeof args !== 'object' || typeof args.query !== 'string') {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid search arguments");
+    }
+
+    const { query, maxResults = API_CONFIG.MAX_RESULTS, pageToken } = args;
+
+    const response = await this.axiosInstance.get(
+      API_CONFIG.ENDPOINTS.SEARCH,
+      {
+        params: {
+          part: API_CONFIG.PART_DEFAULTS.SEARCH,
+          q: query,
+          maxResults: Math.min(maxResults || API_CONFIG.MAX_RESULTS, 50),
+          type: "video",
+          pageToken,
+        },
+      }
+    );
+
+    const formattedResults = {
+      videos: response.data.items.map((item) => ({
+        title: item.snippet.title,
+        id: item.id.videoId,
+        url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+        channelTitle: item.snippet.channelTitle,
+        publishedAt: item.snippet.publishedAt,
+        description: item.snippet.description,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      })),
+      pageInfo: response.data.pageInfo,
+      nextPageToken: response.data.nextPageToken,
+      prevPageToken: response.data.prevPageToken,
+    };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(formattedResults, null, 2),
+        },
+      ],
+    };
+  }
