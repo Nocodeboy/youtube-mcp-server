@@ -325,3 +325,156 @@ class YouTubeMCPServer {
       ],
     };
   }
+
+  async handleGetVideoDetails(args) {
+    if (!args || typeof args !== 'object' || typeof args.videoId !== 'string') {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid video details arguments");
+    }
+
+    const { videoId } = args;
+
+    const response = await this.axiosInstance.get(
+      API_CONFIG.ENDPOINTS.VIDEOS,
+      {
+        params: {
+          part: API_CONFIG.PART_DEFAULTS.VIDEOS,
+          id: videoId,
+        },
+      }
+    );
+
+    if (response.data.items.length === 0) {
+      throw new McpError(ErrorCode.NotFound, `Video with ID ${videoId} not found`);
+    }
+
+    const video = response.data.items[0];
+    const formattedVideo = {
+      title: video.snippet.title,
+      id: video.id,
+      url: `https://www.youtube.com/watch?v=${video.id}`,
+      channelTitle: video.snippet.channelTitle,
+      channelId: video.snippet.channelId,
+      channelUrl: `https://www.youtube.com/channel/${video.snippet.channelId}`,
+      publishedAt: video.snippet.publishedAt,
+      description: video.snippet.description,
+      tags: video.snippet.tags || [],
+      viewCount: video.statistics?.viewCount,
+      likeCount: video.statistics?.likeCount,
+      commentCount: video.statistics?.commentCount,
+      thumbnail: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url || video.snippet.thumbnails.default?.url,
+    };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(formattedVideo, null, 2),
+        },
+      ],
+    };
+  }
+
+  async handleGetChannelDetails(args) {
+    if (!args || typeof args !== 'object' || typeof args.channelId !== 'string') {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid channel details arguments");
+    }
+
+    const { channelId } = args;
+
+    const response = await this.axiosInstance.get(
+      API_CONFIG.ENDPOINTS.CHANNELS,
+      {
+        params: {
+          part: API_CONFIG.PART_DEFAULTS.CHANNELS,
+          id: channelId,
+        },
+      }
+    );
+
+    if (response.data.items.length === 0) {
+      throw new McpError(ErrorCode.NotFound, `Channel with ID ${channelId} not found`);
+    }
+
+    const channel = response.data.items[0];
+    const formattedChannel = {
+      title: channel.snippet.title,
+      id: channel.id,
+      url: `https://www.youtube.com/channel/${channel.id}`,
+      customUrl: channel.snippet.customUrl ? `https://www.youtube.com/c/${channel.snippet.customUrl}` : null,
+      publishedAt: channel.snippet.publishedAt,
+      description: channel.snippet.description,
+      country: channel.snippet.country,
+      subscriberCount: channel.statistics?.subscriberCount,
+      viewCount: channel.statistics?.viewCount,
+      videoCount: channel.statistics?.videoCount,
+      thumbnail: channel.snippet.thumbnails.high?.url || channel.snippet.thumbnails.medium?.url || channel.snippet.thumbnails.default?.url,
+    };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(formattedChannel, null, 2),
+        },
+      ],
+    };
+  }
+
+  async handleSearchChannels(args) {
+    if (!args || typeof args !== 'object' || typeof args.query !== 'string') {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid search channels arguments");
+    }
+
+    const { query, maxResults = API_CONFIG.MAX_RESULTS, pageToken } = args;
+
+    const response = await this.axiosInstance.get(
+      API_CONFIG.ENDPOINTS.SEARCH,
+      {
+        params: {
+          part: API_CONFIG.PART_DEFAULTS.SEARCH,
+          q: query,
+          maxResults: Math.min(maxResults || API_CONFIG.MAX_RESULTS, 50),
+          type: "channel",
+          pageToken,
+        },
+      }
+    );
+
+    const formattedResults = {
+      channels: response.data.items.map((item) => ({
+        title: item.snippet.title,
+        id: item.id.channelId,
+        url: `https://www.youtube.com/channel/${item.id.channelId}`,
+        publishedAt: item.snippet.publishedAt,
+        description: item.snippet.description,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      })),
+      pageInfo: response.data.pageInfo,
+      nextPageToken: response.data.nextPageToken,
+      prevPageToken: response.data.prevPageToken,
+    };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(formattedResults, null, 2),
+        },
+      ],
+    };
+  }
+
+  async run() {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+
+    console.error("YouTube MCP server running on stdio");
+  }
+}
+
+// Iniciar servidor
+const server = new YouTubeMCPServer();
+server.run().catch((error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
