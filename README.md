@@ -161,9 +161,10 @@ Contributions are welcome. You can collaborate in several ways:
 3. Sending pull requests with improvements or fixes
 4. Improving documentation
 
-## Support Me
+## Connect & Support
 
-If you find this project useful and want to show your support:
+- Follow me on X (Twitter): [@Nocodeboy](https://x.com/Nocodeboy)
+- If you find this project useful and want to show your support:
 
 <a href="https://www.buymeacoffee.com/germanhuertas" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
