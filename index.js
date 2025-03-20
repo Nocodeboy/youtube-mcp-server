@@ -74,3 +74,165 @@ class YouTubeMCPServer {
       process.exit(0);
     });
   }
+
+  setupHandlers() {
+    this.setupResourceHandlers();
+    this.setupToolHandlers();
+  }
+
+  setupResourceHandlers() {
+    // Definimos un recurso que representa videos populares
+    this.server.setRequestHandler(
+      ListResourcesRequestSchema,
+      async () => ({
+        resources: [
+          {
+            uri: "youtube://popular/videos",
+            name: "Videos populares en YouTube",
+            mimeType: "application/json",
+            description: "Lista de videos populares actualmente en YouTube",
+          },
+        ],
+      })
+    );
+
+    // Manejador para leer recursos
+    this.server.setRequestHandler(
+      ReadResourceRequestSchema,
+      async (request) => {
+        if (request.params.uri === "youtube://popular/videos") {
+          try {
+            const response = await this.axiosInstance.get(
+              API_CONFIG.ENDPOINTS.VIDEOS,
+              {
+                params: {
+                  part: API_CONFIG.PART_DEFAULTS.VIDEOS,
+                  chart: "mostPopular",
+                  maxResults: API_CONFIG.MAX_RESULTS,
+                },
+              }
+            );
+
+            const formattedVideos = response.data.items.map((video) => ({
+              title: video.snippet.title,
+              id: video.id,
+              url: `https://www.youtube.com/watch?v=${video.id}`,
+              channelTitle: video.snippet.channelTitle,
+              viewCount: video.statistics?.viewCount,
+              publishedAt: video.snippet.publishedAt,
+              description: video.snippet.description,
+            }));
+
+            return {
+              contents: [
+                {
+                  uri: request.params.uri,
+                  mimeType: "application/json",
+                  text: JSON.stringify(formattedVideos, null, 2),
+                },
+              ],
+            };
+          } catch (error) {
+            if (axios.isAxiosError(error)) {
+              throw new McpError(
+                ErrorCode.InternalError,
+                `YouTube API error: ${error.response?.data?.error?.message || error.message}`
+              );
+            }
+            throw error;
+          }
+        } else {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `Unknown resource: ${request.params.uri}`
+          );
+        }
+      }
+    );
+  }
+
+  setupToolHandlers() {
+    // Configurar herramientas disponibles
+    this.server.setRequestHandler(
+      ListToolsRequestSchema,
+      async () => ({
+        tools: [
+          {
+            name: "search_videos",
+            description: "Buscar videos en YouTube",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Términos de búsqueda",
+                },
+                maxResults: {
+                  type: "number",
+                  description: "Número máximo de resultados (entre 1 y 50)",
+                  minimum: 1,
+                  maximum: 50,
+                },
+                pageToken: {
+                  type: "string",
+                  description: "Token para obtener la siguiente página de resultados",
+                },
+              },
+              required: ["query"],
+            },
+          },
+          {
+            name: "get_video_details",
+            description: "Obtener detalles de un video específico",
+            inputSchema: {
+              type: "object",
+              properties: {
+                videoId: {
+                  type: "string",
+                  description: "ID del video de YouTube",
+                },
+              },
+              required: ["videoId"],
+            },
+          },
+          {
+            name: "get_channel_details",
+            description: "Obtener detalles de un canal específico",
+            inputSchema: {
+              type: "object",
+              properties: {
+                channelId: {
+                  type: "string",
+                  description: "ID del canal de YouTube",
+                },
+              },
+              required: ["channelId"],
+            },
+          },
+          {
+            name: "search_channels",
+            description: "Buscar canales en YouTube",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Términos de búsqueda",
+                },
+                maxResults: {
+                  type: "number",
+                  description: "Número máximo de resultados (entre 1 y 50)",
+                  minimum: 1,
+                  maximum: 50,
+                },
+                pageToken: {
+                  type: "string",
+                  description: "Token para obtener la siguiente página de resultados",
+                },
+              },
+              required: ["query"],
+            },
+          },
+        ],
+      })
+    );
