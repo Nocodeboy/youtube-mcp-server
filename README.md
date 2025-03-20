@@ -1,4 +1,4 @@
-# Servidor MCP para YouTube
+# YouTube MCP Server
 
 <div align="center">
   <img src="https://img.shields.io/badge/YouTube_API-v3-red" alt="YouTube API Version">
@@ -7,166 +7,166 @@
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
 </div>
 
-Este es un servidor MCP (Model Context Protocol) que permite a Claude y otros asistentes de IA interactuar con la API de YouTube. El servidor proporciona herramientas para buscar videos, obtener detalles de videos específicos, buscar canales y obtener información detallada de canales.
+This is an MCP (Model Context Protocol) server that allows Claude and other AI assistants to interact with the YouTube API. The server provides tools to search for videos, get details about specific videos, search for channels, and obtain detailed information about channels.
 
-## ¿Qué es MCP?
+## What is MCP?
 
-Model Context Protocol (MCP) es un estándar abierto desarrollado por Anthropic (creadores de Claude) para conectar asistentes de IA con fuentes de datos y herramientas externas. Permite que modelos como Claude accedan a información actualizada y puedan realizar acciones en sistemas externos de manera estandarizada.
+Model Context Protocol (MCP) is an open standard developed by Anthropic (creators of Claude) to connect AI assistants with external data sources and tools. It allows models like Claude to access up-to-date information and perform actions in external systems in a standardized way.
 
-MCP funciona como un "puente universal" para la IA, proporcionando una forma estandarizada para que los modelos accedan a distintos repositorios de contenido, servicios empresariales o aplicaciones.
+MCP functions as a "universal bridge" for AI, providing a standardized way for models to access various content repositories, business services, or applications.
 
-## Requisitos
+## Requirements
 
-- Node.js v16 o superior
-- Una clave de API de YouTube (obtenida desde la consola de desarrolladores de Google)
+- Node.js v16 or higher
+- A YouTube API key (obtained from the Google Developer Console)
 
-## Instalación
+## Installation
 
-1. Clona este repositorio:
+1. Clone this repository:
 ```bash
 git clone https://github.com/Nocodeboy/youtube-mcp-server.git
 cd youtube-mcp-server
 ```
 
-2. Instala las dependencias:
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Crea un archivo `.env` en la raíz del proyecto y añade tu clave de API de YouTube:
+3. Create a `.env` file in the project root and add your YouTube API key:
 ```
-YOUTUBE_API_KEY=tu_clave_de_api_aquí
+YOUTUBE_API_KEY=your_api_key_here
 ```
 
-## Ejecución
+## Execution
 
-Para iniciar el servidor, ejecuta:
+To start the server, run:
 
 ```bash
 npm start
 ```
 
-## Integración con Claude Desktop
+## Integration with Claude Desktop
 
-Para usar este servidor MCP con Claude Desktop, agrega la siguiente configuración a tu archivo `claude_desktop_config.json` (ubicado generalmente en `%APPDATA%\Claude\` en Windows o `~/Library/Application Support/Claude/` en macOS):
+To use this MCP server with Claude Desktop, add the following configuration to your `claude_desktop_config.json` file (usually located in `%APPDATA%\Claude\` on Windows or `~/Library/Application Support/Claude/` on macOS):
 
 ```json
 {
   "mcpServers": {
     "youtube": {
       "command": "node",
-      "args": ["ruta/a/youtube-mcp-server/index.js"],
+      "args": ["path/to/youtube-mcp-server/index.js"],
       "env": {
-        "YOUTUBE_API_KEY": "tu_clave_de_api_aquí"
+        "YOUTUBE_API_KEY": "your_api_key_here"
       }
     }
   }
 }
 ```
 
-Reemplaza `"ruta/a/youtube-mcp-server/index.js"` con la ruta absoluta al archivo `index.js`, y `"tu_clave_de_api_aquí"` con tu clave de API de YouTube.
+Replace `"path/to/youtube-mcp-server/index.js"` with the absolute path to the `index.js` file, and `"your_api_key_here"` with your YouTube API key.
 
-## Herramientas disponibles
+## Available Tools
 
-### 1. Buscar videos
+### 1. Search Videos
 
-Busca videos en YouTube según una consulta.
+Search for videos on YouTube based on a query.
 
 ```
 search_videos
 ```
 
-Parámetros:
-- `query` (string, requerido): Términos de búsqueda
-- `maxResults` (number, opcional): Número máximo de resultados (entre 1 y 50)
-- `pageToken` (string, opcional): Token para obtener la siguiente página de resultados
+Parameters:
+- `query` (string, required): Search terms
+- `maxResults` (number, optional): Maximum number of results (between 1 and 50)
+- `pageToken` (string, optional): Token to get the next page of results
 
-### 2. Obtener detalles de un video
+### 2. Get Video Details
 
-Obtiene información detallada sobre un video específico.
+Get detailed information about a specific video.
 
 ```
 get_video_details
 ```
 
-Parámetros:
-- `videoId` (string, requerido): ID del video de YouTube
+Parameters:
+- `videoId` (string, required): YouTube video ID
 
-### 3. Obtener detalles de un canal
+### 3. Get Channel Details
 
-Obtiene información detallada sobre un canal específico.
+Get detailed information about a specific channel.
 
 ```
 get_channel_details
 ```
 
-Parámetros:
-- `channelId` (string, requerido): ID del canal de YouTube
+Parameters:
+- `channelId` (string, required): YouTube channel ID
 
-### 4. Buscar canales
+### 4. Search Channels
 
-Busca canales en YouTube según una consulta.
+Search for channels on YouTube based on a query.
 
 ```
 search_channels
 ```
 
-Parámetros:
-- `query` (string, requerido): Términos de búsqueda
-- `maxResults` (number, opcional): Número máximo de resultados (entre 1 y 50)
-- `pageToken` (string, opcional): Token para obtener la siguiente página de resultados
+Parameters:
+- `query` (string, required): Search terms
+- `maxResults` (number, optional): Maximum number of results (between 1 and 50)
+- `pageToken` (string, optional): Token to get the next page of results
 
-## Recursos disponibles
+## Available Resources
 
-- `youtube://popular/videos`: Lista de videos populares actualmente en YouTube
+- `youtube://popular/videos`: List of currently popular videos on YouTube
 
-## Ejemplos de uso
+## Usage Examples
 
-Con Claude Desktop, puedes hacer preguntas como:
+With Claude Desktop, you can ask questions like:
 
-- "Busca videos sobre programación en Python"
-- "Muéstrame detalles del video con ID dQw4w9WgXcQ"
-- "Busca canales relacionados con cocina"
-- "Dame información sobre el canal GoogleDevelopers"
-- "¿Cuáles son los videos más populares ahora mismo?"
+- "Search for Python programming videos"
+- "Show me details of video with ID dQw4w9WgXcQ"
+- "Search for cooking-related channels"
+- "Give me information about the GoogleDevelopers channel"
+- "What are the most popular videos right now?"
 
-## Obtener una clave de API de YouTube
+## Getting a YouTube API Key
 
-Para obtener una clave de API de YouTube:
+To get a YouTube API key:
 
-1. Ve a la [Consola de Desarrolladores de Google](https://console.developers.google.com/)
-2. Crea un nuevo proyecto (o selecciona uno existente)
-3. En el panel lateral, selecciona "Biblioteca de APIs"
-4. Busca "YouTube Data API v3" y habilítala
-5. En el panel lateral, selecciona "Credenciales"
-6. Haz clic en "Crear credenciales" y selecciona "Clave de API"
-7. Copia la clave generada y úsala en tu archivo `.env` o en la configuración de Claude Desktop
+1. Go to the [Google Developer Console](https://console.developers.google.com/)
+2. Create a new project (or select an existing one)
+3. In the sidebar, select "API Library"
+4. Search for "YouTube Data API v3" and enable it
+5. In the sidebar, select "Credentials"
+6. Click on "Create credentials" and select "API key"
+7. Copy the generated key and use it in your `.env` file or in the Claude Desktop configuration
 
-## Solución de problemas
+## Troubleshooting
 
-Si encuentras errores, verifica:
+If you encounter errors, check:
 
-1. Que has instalado todas las dependencias con `npm install`
-2. Que tu clave de API de YouTube es válida
-3. Que tienes la API de YouTube v3 habilitada en tu proyecto de Google
-4. Que estás usando Node.js versión 16 o superior
-5. Si usas Claude Desktop, verifica los logs en `%APPDATA%\Claude\logs\` (Windows) o `~/Library/Logs/Claude/` (macOS)
+1. That you have installed all dependencies with `npm install`
+2. That your YouTube API key is valid
+3. That you have the YouTube Data API v3 enabled in your Google project
+4. That you are using Node.js version 16 or higher
+5. If you use Claude Desktop, check the logs in `%APPDATA%\Claude\logs\` (Windows) or `~/Library/Logs/Claude/` (macOS)
 
-## Contribuciones
+## Contributions
 
-Las contribuciones son bienvenidas. Puedes colaborar de varias formas:
+Contributions are welcome. You can collaborate in several ways:
 
-1. Reportando bugs o problemas
-2. Sugeriendo nuevas funcionalidades
-3. Enviando pull requests con mejoras o correcciones
-4. Mejorando la documentación
+1. Reporting bugs or issues
+2. Suggesting new features
+3. Sending pull requests with improvements or fixes
+4. Improving documentation
 
-## Apóyame
+## Support Me
 
-Si encuentras útil este proyecto y quieres mostrar tu apoyo:
+If you find this project useful and want to show your support:
 
 <a href="https://www.buymeacoffee.com/germanhuertas" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-## Licencia
+## License
 
-Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo LICENSE para más detalles.
+This project is licensed under the MIT License. See the LICENSE file for more details.
