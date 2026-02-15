@@ -8,41 +8,32 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import axios from "axios";
+import { google } from "googleapis";
 import dotenv from "dotenv";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// Cargar variables de entorno
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const API_KEY = process.env.YOUTUBE_API_KEY;
-if (!API_KEY) {
-  throw new Error("YOUTUBE_API_KEY environment variable is required");
-}
+// Cargar variables de entorno desde la carpeta del proyecto
+dotenv.config({ path: path.join(__dirname, ".env") });
 
-const API_CONFIG = {
-  BASE_URL: "https://www.googleapis.com/youtube/v3",
-  ENDPOINTS: {
-    SEARCH: "search",
-    VIDEOS: "videos",
-    CHANNELS: "channels",
-  },
-  PART_DEFAULTS: {
-    SEARCH: "snippet",
-    VIDEOS: "snippet,statistics",
-    CHANNELS: "snippet,statistics",
-  },
-  MAX_RESULTS: 10,
-};
+const TOKEN_PATH = path.join(__dirname, "token.json");
+
+const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
+const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
+const REDIRECT_URI = "http://localhost:1";
 
 /**
- * Servidor MCP para interactuar con la API de YouTube
+ * Servidor MCP para interactuar con la API de YouTube (v3) con soporte de escritura y OAuth
  */
 class YouTubeMCPServer {
   constructor() {
     this.server = new Server(
       {
-        name: "yt-mcp-server",
-        version: "1.0.0",
+        name: "youtube-mcp-server",
+        version: "2.0.0",
       },
       {
         capabilities: {
@@ -52,16 +43,42 @@ class YouTubeMCPServer {
       }
     );
 
-    // Configurar instancia de axios
-    this.axiosInstance = axios.create({
-      baseURL: API_CONFIG.BASE_URL,
-      params: {
-        key: API_KEY,
-      },
-    });
+    this.youtube = null;
+    this.oauth2Client = null;
 
     this.setupHandlers();
     this.setupErrorHandling();
+  }
+
+  async initialize() {
+    console.error(`Checking credentials... ID: ${CLIENT_ID ? 'Present' : 'Missing'}, Secret: ${CLIENT_SECRET ? 'Present' : 'Missing'}`);
+    
+    if (CLIENT_ID && CLIENT_SECRET) {
+      this.oauth2Client = new google.auth.OAuth2(
+        CLIENT_ID,
+        CLIENT_SECRET,
+        REDIRECT_URI
+      );
+
+      try {
+        const tokenContent = await fs.readFile(TOKEN_PATH, "utf-8");
+        const tokens = JSON.parse(tokenContent);
+        this.oauth2Client.setCredentials(tokens);
+        this.youtube = google.youtube({ version: "v3", auth: this.oauth2Client });
+        console.error("YouTube API initialized with OAuth2");
+      } catch (error) {
+        console.error("No token found or invalid token. Run 'get_auth_url' to authorize.");
+        if (process.env.YOUTUBE_API_KEY) {
+          this.youtube = google.youtube({ version: "v3", auth: process.env.YOUTUBE_API_KEY });
+          console.error("YouTube API initialized with API Key (Read-only mode)");
+        }
+      }
+    } else if (process.env.YOUTUBE_API_KEY) {
+      this.youtube = google.youtube({ version: "v3", auth: process.env.YOUTUBE_API_KEY });
+      console.error("YouTube API initialized with API Key (Read-only mode)");
+    } else {
+      throw new Error("Missing YouTube credentials (API Key or Client ID/Secret)");
+    }
   }
 
   setupErrorHandling() {
@@ -81,400 +98,283 @@ class YouTubeMCPServer {
   }
 
   setupResourceHandlers() {
-    // Definimos un recurso que representa videos populares
-    this.server.setRequestHandler(
-      ListResourcesRequestSchema,
-      async () => ({
-        resources: [
-          {
-            uri: "youtube://popular/videos",
-            name: "Videos populares en YouTube",
-            mimeType: "application/json",
-            description: "Lista de videos populares actualmente en YouTube",
-          },
-        ],
-      })
-    );
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+      resources: [
+        {
+          uri: "youtube://popular/videos",
+          name: "Videos populares en YouTube",
+          mimeType: "application/json",
+          description: "Lista de videos populares actualmente en YouTube",
+        },
+      ],
+    }));
 
-    // Manejador para leer recursos
-    this.server.setRequestHandler(
-      ReadResourceRequestSchema,
-      async (request) => {
-        if (request.params.uri === "youtube://popular/videos") {
-          try {
-            const response = await this.axiosInstance.get(
-              API_CONFIG.ENDPOINTS.VIDEOS,
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      if (request.params.uri === "youtube://popular/videos") {
+        try {
+          const response = await this.youtube.videos.list({
+            part: ["snippet", "statistics"],
+            chart: "mostPopular",
+            maxResults: 10,
+          });
+
+          const formattedVideos = response.data.items.map((video) => ({
+            title: video.snippet.title,
+            id: video.id,
+            url: `https://www.youtube.com/watch?v=${video.id}`,
+            channelTitle: video.snippet.channelTitle,
+            viewCount: video.statistics?.viewCount,
+            publishedAt: video.snippet.publishedAt,
+            description: video.snippet.description,
+          }));
+
+          return {
+            contents: [
               {
-                params: {
-                  part: API_CONFIG.PART_DEFAULTS.VIDEOS,
-                  chart: "mostPopular",
-                  maxResults: API_CONFIG.MAX_RESULTS,
-                },
-              }
-            );
-
-            const formattedVideos = response.data.items.map((video) => ({
-              title: video.snippet.title,
-              id: video.id,
-              url: `https://www.youtube.com/watch?v=${video.id}`,
-              channelTitle: video.snippet.channelTitle,
-              viewCount: video.statistics?.viewCount,
-              publishedAt: video.snippet.publishedAt,
-              description: video.snippet.description,
-            }));
-
-            return {
-              contents: [
-                {
-                  uri: request.params.uri,
-                  mimeType: "application/json",
-                  text: JSON.stringify(formattedVideos, null, 2),
-                },
-              ],
-            };
-          } catch (error) {
-            if (axios.isAxiosError(error)) {
-              throw new McpError(
-                ErrorCode.InternalError,
-                `YouTube API error: ${error.response?.data?.error?.message || error.message}`
-              );
-            }
-            throw error;
-          }
-        } else {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `Unknown resource: ${request.params.uri}`
-          );
+                uri: request.params.uri,
+                mimeType: "application/json",
+                text: JSON.stringify(formattedVideos, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          throw new McpError(ErrorCode.InternalError, `YouTube API error: ${error.message}`);
         }
       }
-    );
+      throw new McpError(ErrorCode.InvalidRequest, `Unknown resource: ${request.params.uri}`);
+    });
   }
 
   setupToolHandlers() {
-    // Configurar herramientas disponibles
-    this.server.setRequestHandler(
-      ListToolsRequestSchema,
-      async () => ({
-        tools: [
-          {
-            name: "search_videos",
-            description: "Buscar videos en YouTube",
-            inputSchema: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "Términos de búsqueda",
-                },
-                maxResults: {
-                  type: "number",
-                  description: "Número máximo de resultados (entre 1 y 50)",
-                  minimum: 1,
-                  maximum: 50,
-                },
-                pageToken: {
-                  type: "string",
-                  description: "Token para obtener la siguiente página de resultados",
-                },
-              },
-              required: ["query"],
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: "get_auth_url",
+          description: "Generar la URL de autorización de Google para habilitar funciones de escritura",
+          inputSchema: { type: "object", properties: {} }
+        },
+        {
+          name: "authorize",
+          description: "Completar el proceso de autorización",
+          inputSchema: {
+            type: "object",
+            properties: {
+              authUrl: { type: "string", description: "La URL de redirección completa" }
             },
-          },
-          {
-            name: "get_video_details",
-            description: "Obtener detalles de un video específico",
-            inputSchema: {
-              type: "object",
-              properties: {
-                videoId: {
-                  type: "string",
-                  description: "ID del video de YouTube",
-                },
-              },
-              required: ["videoId"],
+            required: ["authUrl"]
+          }
+        },
+        {
+          name: "search_videos",
+          description: "Buscar videos en YouTube",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string" },
+              maxResults: { type: "number", minimum: 1, maximum: 50 },
+              pageToken: { type: "string" }
             },
-          },
-          {
-            name: "get_channel_details",
-            description: "Obtener detalles de un canal específico",
-            inputSchema: {
-              type: "object",
-              properties: {
-                channelId: {
-                  type: "string",
-                  description: "ID del canal de YouTube",
-                },
-              },
-              required: ["channelId"],
+            required: ["query"]
+          }
+        },
+        {
+          name: "get_video_details",
+          description: "Obtener detalles de un video específico",
+          inputSchema: {
+            type: "object",
+            properties: {
+              videoId: { type: "string" }
             },
-          },
-          {
-            name: "search_channels",
-            description: "Buscar canales en YouTube",
-            inputSchema: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "Términos de búsqueda",
-                },
-                maxResults: {
-                  type: "number",
-                  description: "Número máximo de resultados (entre 1 y 50)",
-                  minimum: 1,
-                  maximum: 50,
-                },
-                pageToken: {
-                  type: "string",
-                  description: "Token para obtener la siguiente página de resultados",
-                },
-              },
-              required: ["query"],
+            required: ["videoId"]
+          }
+        },
+        {
+          name: "list_comments",
+          description: "Listar comentarios de un video",
+          inputSchema: {
+            type: "object",
+            properties: {
+              videoId: { type: "string" },
+              maxResults: { type: "number", minimum: 1, maximum: 100 }
             },
-          },
-        ],
-      })
-    );
+            required: ["videoId"]
+          }
+        },
+        {
+          name: "reply_to_comment",
+          description: "Responder a un comentario de YouTube",
+          inputSchema: {
+            type: "object",
+            properties: {
+              parentId: { type: "string" },
+              text: { type: "string" }
+            },
+            required: ["parentId", "text"]
+          }
+        },
+        {
+          name: "update_video",
+          description: "Actualizar título, descripción o etiquetas de un video",
+          inputSchema: {
+            type: "object",
+            properties: {
+              videoId: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              tags: { type: "array", items: { type: "string" } },
+              privacyStatus: { type: "string", enum: ["public", "unlisted", "private"] }
+            },
+            required: ["videoId"]
+          }
+        },
+        {
+          name: "set_thumbnail",
+          description: "Establecer una miniatura personalizada para un video",
+          inputSchema: {
+            type: "object",
+            properties: {
+              videoId: { type: "string" },
+              imageUrl: { type: "string" }
+            },
+            required: ["videoId", "imageUrl"]
+          }
+        }
+      ]
+    }));
 
-    // Manejador para llamadas a herramientas
-    this.server.setRequestHandler(
-      CallToolRequestSchema,
-      async (request) => {
-        try {
-          switch (request.params.name) {
-            case "search_videos":
-              return await this.handleSearchVideos(request.params.arguments);
-            
-            case "get_video_details":
-              return await this.handleGetVideoDetails(request.params.arguments);
-            
-            case "get_channel_details":
-              return await this.handleGetChannelDetails(request.params.arguments);
-            
-            case "search_channels":
-              return await this.handleSearchChannels(request.params.arguments);
-            
-            default:
-              throw new McpError(
-                ErrorCode.MethodNotFound,
-                `Unknown tool: ${request.params.name}`
-              );
-          }
-        } catch (error) {
-          if (axios.isAxiosError(error)) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `YouTube API error: ${error.response?.data?.error?.message || error.message}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-          throw error;
+    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+      try {
+        switch (name) {
+          case "get_auth_url": return await this.handleGetAuthUrl();
+          case "authorize": return await this.handleAuthorize(args);
+          case "search_videos": return await this.handleSearchVideos(args);
+          case "get_video_details": return await this.handleGetVideoDetails(args);
+          case "list_comments": return await this.handleListComments(args);
+          case "reply_to_comment": return await this.handleReplyToComment(args);
+          case "update_video": return await this.handleUpdateVideo(args);
+          case "set_thumbnail": return await this.handleSetThumbnail(args);
+          default: throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`);
+        }
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${error.message}` }],
+          isError: true
+        };
+      }
+    });
+  }
+
+  async handleGetAuthUrl() {
+    if (!this.oauth2Client) throw new Error("OAuth2 not configured. Set CLIENT_ID and CLIENT_SECRET.");
+    const url = this.oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: [
+        "https://www.googleapis.com/auth/youtube",
+        "https://www.googleapis.com/auth/youtube.force-ssl"
+      ],
+      prompt: "consent"
+    });
+    return { content: [{ type: "text", text: `Visita esta URL para autorizar: ${url}\nLuego usa 'authorize' con la URL resultante.` }] };
+  }
+
+  async handleAuthorize({ authUrl }) {
+    if (!this.oauth2Client) throw new Error("OAuth2 not configured.");
+    let code = authUrl;
+    if (authUrl.includes("code=")) {
+      const urlParams = new URL(authUrl);
+      code = urlParams.searchParams.get("code");
+    }
+    const { tokens } = await this.oauth2Client.getToken(code);
+    await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+    this.oauth2Client.setCredentials(tokens);
+    this.youtube = google.youtube({ version: "v3", auth: this.oauth2Client });
+    return { content: [{ type: "text", text: "¡Autorización exitosa!" }] };
+  }
+
+  async handleSearchVideos({ query, maxResults = 10, pageToken }) {
+    const res = await this.youtube.search.list({
+      part: ["snippet"],
+      q: query,
+      maxResults,
+      type: ["video"],
+      pageToken
+    });
+    return { content: [{ type: "text", text: JSON.stringify(res.data, null, 2) }] };
+  }
+
+  async handleGetVideoDetails({ videoId }) {
+    const res = await this.youtube.videos.list({
+      part: ["snippet", "statistics", "status"],
+      id: [videoId]
+    });
+    return { content: [{ type: "text", text: JSON.stringify(res.data.items[0], null, 2) }] };
+  }
+
+  async handleListComments({ videoId, maxResults = 20 }) {
+    const res = await this.youtube.commentThreads.list({
+      part: ["snippet", "replies"],
+      videoId,
+      maxResults
+    });
+    return { content: [{ type: "text", text: JSON.stringify(res.data.items, null, 2) }] };
+  }
+
+  async handleReplyToComment({ parentId, text }) {
+    const res = await this.youtube.comments.insert({
+      part: ["snippet"],
+      requestBody: {
+        snippet: {
+          parentId,
+          textOriginal: text
         }
       }
-    );
+    });
+    return { content: [{ type: "text", text: `Respuesta enviada: ${res.data.id}` }] };
   }
 
-  // Manejadores para cada herramienta
+  async handleUpdateVideo({ videoId, title, description, tags, privacyStatus }) {
+    const video = await this.youtube.videos.list({ part: ["snippet", "status"], id: [videoId] });
+    if (!video.data.items.length) throw new Error("Video no encontrado");
+    
+    const snippet = video.data.items[0].snippet;
+    const status = video.data.items[0].status;
 
-  async handleSearchVideos(args) {
-    if (!args || typeof args !== 'object' || typeof args.query !== 'string') {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid search arguments");
-    }
+    if (title) snippet.title = title;
+    if (description) snippet.description = description;
+    if (tags) snippet.tags = tags;
+    if (privacyStatus) status.privacyStatus = privacyStatus;
 
-    const { query, maxResults = API_CONFIG.MAX_RESULTS, pageToken } = args;
-
-    const response = await this.axiosInstance.get(
-      API_CONFIG.ENDPOINTS.SEARCH,
-      {
-        params: {
-          part: API_CONFIG.PART_DEFAULTS.SEARCH,
-          q: query,
-          maxResults: Math.min(maxResults || API_CONFIG.MAX_RESULTS, 50),
-          type: "video",
-          pageToken,
-        },
+    await this.youtube.videos.update({
+      part: ["snippet", "status"],
+      requestBody: {
+        id: videoId,
+        snippet,
+        status
       }
-    );
-
-    const formattedResults = {
-      videos: response.data.items.map((item) => ({
-        title: item.snippet.title,
-        id: item.id.videoId,
-        url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-        channelTitle: item.snippet.channelTitle,
-        publishedAt: item.snippet.publishedAt,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-      })),
-      pageInfo: response.data.pageInfo,
-      nextPageToken: response.data.nextPageToken,
-      prevPageToken: response.data.prevPageToken,
-    };
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(formattedResults, null, 2),
-        },
-      ],
-    };
+    });
+    return { content: [{ type: "text", text: `Video actualizado con éxito.` }] };
   }
 
-  async handleGetVideoDetails(args) {
-    if (!args || typeof args !== 'object' || typeof args.videoId !== 'string') {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid video details arguments");
-    }
-
-    const { videoId } = args;
-
-    const response = await this.axiosInstance.get(
-      API_CONFIG.ENDPOINTS.VIDEOS,
-      {
-        params: {
-          part: API_CONFIG.PART_DEFAULTS.VIDEOS,
-          id: videoId,
-        },
+  async handleSetThumbnail({ videoId, imageUrl }) {
+    const axios = (await import("axios")).default;
+    const imageRes = await axios.get(imageUrl, { responseType: "stream" });
+    await this.youtube.thumbnails.set({
+      videoId,
+      media: {
+        mimeType: imageRes.headers["content-type"],
+        body: imageRes.data
       }
-    );
-
-    if (response.data.items.length === 0) {
-      throw new McpError(ErrorCode.NotFound, `Video with ID ${videoId} not found`);
-    }
-
-    const video = response.data.items[0];
-    const formattedVideo = {
-      title: video.snippet.title,
-      id: video.id,
-      url: `https://www.youtube.com/watch?v=${video.id}`,
-      channelTitle: video.snippet.channelTitle,
-      channelId: video.snippet.channelId,
-      channelUrl: `https://www.youtube.com/channel/${video.snippet.channelId}`,
-      publishedAt: video.snippet.publishedAt,
-      description: video.snippet.description,
-      tags: video.snippet.tags || [],
-      viewCount: video.statistics?.viewCount,
-      likeCount: video.statistics?.likeCount,
-      commentCount: video.statistics?.commentCount,
-      thumbnail: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url || video.snippet.thumbnails.default?.url,
-    };
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(formattedVideo, null, 2),
-        },
-      ],
-    };
-  }
-
-  async handleGetChannelDetails(args) {
-    if (!args || typeof args !== 'object' || typeof args.channelId !== 'string') {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid channel details arguments");
-    }
-
-    const { channelId } = args;
-
-    const response = await this.axiosInstance.get(
-      API_CONFIG.ENDPOINTS.CHANNELS,
-      {
-        params: {
-          part: API_CONFIG.PART_DEFAULTS.CHANNELS,
-          id: channelId,
-        },
-      }
-    );
-
-    if (response.data.items.length === 0) {
-      throw new McpError(ErrorCode.NotFound, `Channel with ID ${channelId} not found`);
-    }
-
-    const channel = response.data.items[0];
-    const formattedChannel = {
-      title: channel.snippet.title,
-      id: channel.id,
-      url: `https://www.youtube.com/channel/${channel.id}`,
-      customUrl: channel.snippet.customUrl ? `https://www.youtube.com/c/${channel.snippet.customUrl}` : null,
-      publishedAt: channel.snippet.publishedAt,
-      description: channel.snippet.description,
-      country: channel.snippet.country,
-      subscriberCount: channel.statistics?.subscriberCount,
-      viewCount: channel.statistics?.viewCount,
-      videoCount: channel.statistics?.videoCount,
-      thumbnail: channel.snippet.thumbnails.high?.url || channel.snippet.thumbnails.medium?.url || channel.snippet.thumbnails.default?.url,
-    };
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(formattedChannel, null, 2),
-        },
-      ],
-    };
-  }
-
-  async handleSearchChannels(args) {
-    if (!args || typeof args !== 'object' || typeof args.query !== 'string') {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid search channels arguments");
-    }
-
-    const { query, maxResults = API_CONFIG.MAX_RESULTS, pageToken } = args;
-
-    const response = await this.axiosInstance.get(
-      API_CONFIG.ENDPOINTS.SEARCH,
-      {
-        params: {
-          part: API_CONFIG.PART_DEFAULTS.SEARCH,
-          q: query,
-          maxResults: Math.min(maxResults || API_CONFIG.MAX_RESULTS, 50),
-          type: "channel",
-          pageToken,
-        },
-      }
-    );
-
-    const formattedResults = {
-      channels: response.data.items.map((item) => ({
-        title: item.snippet.title,
-        id: item.id.channelId,
-        url: `https://www.youtube.com/channel/${item.id.channelId}`,
-        publishedAt: item.snippet.publishedAt,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-      })),
-      pageInfo: response.data.pageInfo,
-      nextPageToken: response.data.nextPageToken,
-      prevPageToken: response.data.prevPageToken,
-    };
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(formattedResults, null, 2),
-        },
-      ],
-    };
+    });
+    return { content: [{ type: "text", text: "Miniatura actualizada." }] };
   }
 
   async run() {
+    await this.initialize();
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-
-    console.error("YouTube MCP server running on stdio");
   }
 }
 
-// Iniciar servidor
 const server = new YouTubeMCPServer();
-server.run().catch((error) => {
-  console.error("Server error:", error);
-  process.exit(1);
-});
+server.run().catch(console.error);

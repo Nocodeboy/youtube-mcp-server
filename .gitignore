@@ -23,3 +23,6 @@ yarn-error.log*
 # Directorios y archivos específicos del sistema operativo
 .DS_Store
 Thumbs.db
+# Local OAuth tokens
+token.json
+
