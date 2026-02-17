@@ -238,6 +238,34 @@ class YouTubeMCPServer {
             },
             required: ["videoId", "imageUrl"]
           }
+        },
+        {
+          name: "analytics_top_videos",
+          description: "(Solo lectura) Top videos por métrica en un rango de fechas (YouTube Analytics API)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              startDate: { type: "string", description: "YYYY-MM-DD" },
+              endDate: { type: "string", description: "YYYY-MM-DD" },
+              metric: { type: "string", description: "views|estimatedMinutesWatched|averageViewDuration|subscribersGained", default: "views" },
+              limit: { type: "number", minimum: 1, maximum: 200, default: 10 }
+            },
+            required: ["startDate", "endDate"]
+          }
+        },
+        {
+          name: "analytics_video_metrics",
+          description: "(Solo lectura) Métricas de un video en un rango de fechas (YouTube Analytics API)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              videoId: { type: "string" },
+              startDate: { type: "string", description: "YYYY-MM-DD" },
+              endDate: { type: "string", description: "YYYY-MM-DD" },
+              metrics: { type: "array", items: { type: "string" }, description: "Ej: [views,estimatedMinutesWatched,averageViewDuration,subscribersGained]" }
+            },
+            required: ["videoId", "startDate", "endDate"]
+          }
         }
       ]
     }));
@@ -254,6 +282,8 @@ class YouTubeMCPServer {
           case "reply_to_comment": return await this.handleReplyToComment(args);
           case "update_video": return await this.handleUpdateVideo(args);
           case "set_thumbnail": return await this.handleSetThumbnail(args);
+          case "analytics_top_videos": return await this.handleAnalyticsTopVideos(args);
+          case "analytics_video_metrics": return await this.handleAnalyticsVideoMetrics(args);
           default: throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`);
         }
       } catch (error) {
@@ -271,7 +301,8 @@ class YouTubeMCPServer {
       access_type: "offline",
       scope: [
         "https://www.googleapis.com/auth/youtube",
-        "https://www.googleapis.com/auth/youtube.force-ssl"
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/yt-analytics.readonly"
       ],
       prompt: "consent"
     });
@@ -289,6 +320,7 @@ class YouTubeMCPServer {
     await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2));
     this.oauth2Client.setCredentials(tokens);
     this.youtube = google.youtube({ version: "v3", auth: this.oauth2Client });
+    this.youtubeAnalytics = google.youtubeAnalytics({ version: "v2", auth: this.oauth2Client });
     return { content: [{ type: "text", text: "¡Autorización exitosa!" }] };
   }
 
@@ -367,6 +399,42 @@ class YouTubeMCPServer {
       }
     });
     return { content: [{ type: "text", text: "Miniatura actualizada." }] };
+  }
+
+  async handleAnalyticsTopVideos({ startDate, endDate, metric = "views", limit = 10 }) {
+    if (!this.youtubeAnalytics) throw new Error("Analytics no configurado. Re-autoriza con get_auth_url/authorize para incluir yt-analytics.readonly.");
+
+    const allowed = new Set(["views", "estimatedMinutesWatched", "averageViewDuration", "subscribersGained"]);
+    const m = allowed.has(metric) ? metric : "views";
+
+    const res = await this.youtubeAnalytics.reports.query({
+      ids: "channel==MINE",
+      startDate,
+      endDate,
+      metrics: m,
+      dimensions: "video",
+      sort: `-${m}`,
+      maxResults: Math.min(Math.max(limit || 10, 1), 200)
+    });
+
+    return { content: [{ type: "text", text: JSON.stringify(res.data, null, 2) }] };
+  }
+
+  async handleAnalyticsVideoMetrics({ videoId, startDate, endDate, metrics }) {
+    if (!this.youtubeAnalytics) throw new Error("Analytics no configurado. Re-autoriza con get_auth_url/authorize para incluir yt-analytics.readonly.");
+
+    const defaultMetrics = ["views", "estimatedMinutesWatched", "averageViewDuration", "subscribersGained"];
+    const m = Array.isArray(metrics) && metrics.length ? metrics : defaultMetrics;
+
+    const res = await this.youtubeAnalytics.reports.query({
+      ids: "channel==MINE",
+      startDate,
+      endDate,
+      metrics: m.join(","),
+      filters: `video==${videoId}`
+    });
+
+    return { content: [{ type: "text", text: JSON.stringify(res.data, null, 2) }] };
   }
 
   async run() {
