@@ -35,6 +35,7 @@ const EnvSchema = z.object({
   YOUTUBE_AUDIT_LOG: blankAsUnset(z.string().min(1).optional()),
   YOUTUBE_ALLOW_WRITES: blankAsUnset(boolish.default(false)),
   YOUTUBE_ENABLE_CAPTIONS: blankAsUnset(boolish.default(false)),
+  YOUTUBE_API_VIA_PROXY: blankAsUnset(boolish.default(false)),
   YOUTUBE_MAX_THUMBNAIL_BYTES: blankAsUnset(
     z.coerce.number().int().positive().default(2 * 1024 * 1024),
   ),
@@ -42,6 +43,7 @@ const EnvSchema = z.object({
 
 export type Config = {
   apiKey?: string;
+  apiViaProxy: boolean;
   clientId?: string;
   clientSecret?: string;
   redirectUri: string;
@@ -92,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     apiKey: e.YOUTUBE_API_KEY,
+    apiViaProxy: e.YOUTUBE_API_VIA_PROXY,
     clientId: e.YOUTUBE_CLIENT_ID,
     clientSecret: e.YOUTUBE_CLIENT_SECRET,
     redirectUri: e.YOUTUBE_REDIRECT_URI,

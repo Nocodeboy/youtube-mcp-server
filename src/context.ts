@@ -6,7 +6,7 @@ import { createOAuthClient, grantedScopes } from "./auth/oauth.js";
 import { AuditLog } from "./lib/auditLog.js";
 import { NotAuthorizedError, ToolError, WriteDisabledError } from "./lib/errors.js";
 
-export type AuthMode = "oauth" | "api-key" | "unauthenticated";
+export type AuthMode = "oauth" | "api-key" | "proxy" | "unauthenticated";
 
 /**
  * Shared state for every tool: which API clients exist, how we authenticated, and the guards
@@ -72,11 +72,25 @@ export class YouTubeContext {
       return;
     }
 
+    // An egress proxy or API gateway can attach the key on the way out, so the server holds
+    // no credential at all. Sending our own would collide with the injected one, so the
+    // client is built with no auth and the network supplies identity.
+    if (this.config.apiViaProxy) {
+      this.youtube = google.youtube({ version: "v3" });
+      this.mode = "proxy";
+      console.error(
+        "[auth] no local credential: expecting an upstream proxy to attach the API key " +
+          "(read-only; Analytics unavailable)",
+      );
+      return;
+    }
+
     this.mode = "unauthenticated";
     if (!this.config.hasOAuthCredentials) {
       console.error(
         "[auth] no credentials configured. Set YOUTUBE_API_KEY, or " +
-          "YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET for OAuth.",
+          "YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET for OAuth, or " +
+          "YOUTUBE_API_VIA_PROXY=true if an upstream proxy attaches the key.",
       );
     }
   }
@@ -122,7 +136,7 @@ export class YouTubeContext {
 
   requireAnalytics(): youtubeAnalytics_v2.Youtubeanalytics {
     if (!this.analytics) {
-      if (this.mode === "api-key") {
+      if (this.mode === "api-key" || this.mode === "proxy") {
         throw new ToolError(
           "The YouTube Analytics API cannot be used with an API key.",
           "Analytics reports channel-owner data, so it needs OAuth. Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET, then run 'get_auth_url'.",

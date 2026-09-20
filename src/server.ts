@@ -75,7 +75,9 @@ export function createServer(ctx: YouTubeContext): McpServer {
           if (tool.oauthOnly && ctx.authMode !== "oauth") {
             throw new NotAuthorizedError(
               `'${tool.name}'`,
-              ctx.authMode === "api-key" ? "api-key" : "unauthenticated",
+              ctx.authMode === "api-key" || ctx.authMode === "proxy"
+                ? ctx.authMode
+                : "unauthenticated",
             );
           }
           return await tool.handler(args ?? {}, ctx);

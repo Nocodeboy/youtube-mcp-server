@@ -82,6 +82,7 @@ export const authTools: ToolDefinition[] = [
 
       return json({
         authMode: ctx.authMode,
+        credentialSuppliedByProxy: ctx.authMode === "proxy",
         writesEnabled: ctx.config.allowWrites,
         captionsEnabled: ctx.config.enableCaptions,
         tokenPath: ctx.store.location,

@@ -26,12 +26,12 @@ export class NotAuthorizedError extends ToolError {
    * credentials at all: the key works fine for public reads and will never work here, so
    * saying which tools need OAuth and why saves a round of confused retrying.
    */
-  constructor(what: string, mode?: "api-key" | "unauthenticated") {
+  constructor(what: string, mode?: "api-key" | "proxy" | "unauthenticated") {
     super(
-      mode === "api-key"
+      mode === "api-key" || mode === "proxy"
         ? `${what} needs OAuth and cannot work with an API key.`
         : `${what} requires OAuth, and no valid token is loaded.`,
-      mode === "api-key"
+      mode === "api-key" || mode === "proxy"
         ? "An API key only reads public data. Analytics, captions, your own channel and all " +
           "writes act on behalf of a channel owner, so they need OAuth: set " +
           "YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET, then run 'get_auth_url'."
@@ -74,6 +74,20 @@ export function describeError(error: unknown): { message: string; hint?: string 
     err.response?.data?.error?.message ??
     err.message ??
     (typeof error === "string" ? error : "Unknown error");
+
+  // Google returns reason "forbidden" both for a scope problem and for no identity at all.
+  // They need opposite fixes, and the generic scope hint sends you hunting in the wrong
+  // place, so split them on the message before the reason switch.
+  if (/unregistered callers|without established identity/i.test(base)) {
+    return {
+      message: `No API credential reached YouTube: ${base}`,
+      hint:
+        "The request went out with no API key. Set YOUTUBE_API_KEY, or authorize with OAuth. " +
+        "If an upstream proxy is meant to attach the key (YOUTUBE_API_VIA_PROXY=true), check " +
+        "that its host pattern covers youtube.googleapis.com — matching youtube.com is not " +
+        "enough, since the Data API is served from a different domain.",
+    };
+  }
 
   switch (reason) {
     case "quotaExceeded":

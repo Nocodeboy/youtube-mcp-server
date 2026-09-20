@@ -67,6 +67,13 @@ are configured, OAuth is used and the API key is the fallback when no token is s
 
 **API key:** Google Cloud Console → APIs & Services → Credentials → Create credentials → API key.
 
+**Key attached by a proxy or gateway:** set `YOUTUBE_API_VIA_PROXY=true` and leave
+`YOUTUBE_API_KEY` unset. The server then builds its client with no credential so the one your
+proxy injects is the only one on the request. The proxy must match the API's real hosts —
+`youtube.googleapis.com` for the Data API and `youtubeanalytics.googleapis.com` for Analytics.
+A rule matching `youtube.com` will never fire: no API traffic goes there. Google accepts an
+API key in the `X-goog-api-key` header, which is what a header-injecting proxy should set.
+
 **OAuth:** Google Cloud Console → Credentials → Create credentials → OAuth client ID →
 application type **Desktop app**. Copy the client ID and secret into `.env`.
 
@@ -276,6 +283,7 @@ Analytics API quota is separate and far more generous.
 | `YOUTUBE_CLIENT_ID` | — | OAuth client ID |
 | `YOUTUBE_CLIENT_SECRET` | — | OAuth client secret |
 | `YOUTUBE_REDIRECT_URI` | `http://localhost:8790/oauth2callback` | Must match the OAuth client |
+| `YOUTUBE_API_VIA_PROXY` | `false` | No local key; an upstream proxy attaches it |
 | `YOUTUBE_ALLOW_WRITES` | `false` | Enable mutating tools |
 | `YOUTUBE_ENABLE_CAPTIONS` | `false` | Enable caption tools (widens scope) |
 | `YOUTUBE_TOKEN_PATH` | `./token.json` | Where the OAuth token lives |
