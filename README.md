@@ -1,173 +1,335 @@
 # YouTube MCP Server
 
 <div align="center">
-  <img src="https://img.shields.io/badge/YouTube_API-v3-red" alt="YouTube API Version">
-  <img src="https://img.shields.io/badge/MCP-Model_Context_Protocol-green" alt="MCP">
-  <img src="https://img.shields.io/badge/Claude-compatible-blue" alt="Claude Compatible">
-  <img src="https://img.shields.io/badge/license-MIT-orange" alt="License">
+  <img src="https://img.shields.io/badge/YouTube_API-v3-red" alt="YouTube API v3">
+  <img src="https://img.shields.io/badge/Analytics_API-v2-red" alt="YouTube Analytics API v2">
+  <img src="https://img.shields.io/badge/MCP-1.30-green" alt="MCP">
+  <img src="https://img.shields.io/badge/TypeScript-5.9-blue" alt="TypeScript">
+  <img src="https://img.shields.io/badge/license-MIT-orange" alt="MIT">
 </div>
 
-This is an MCP (Model Context Protocol) server that allows Claude and other AI assistants to interact with the YouTube API. The server provides tools to search for videos, get details about specific videos, search for channels, and obtain detailed information about channels.
+An MCP server that gives Claude and other AI assistants access to the **YouTube Data API v3**
+and the **YouTube Analytics API v2** — search, video and channel metadata, playlists, comments,
+transcripts and channel analytics.
 
-## What is MCP?
+Writes are **off by default**. When you turn them on, every mutation is recorded to a local
+audit log, and thumbnail URLs are checked before being fetched.
 
-Model Context Protocol (MCP) is an open standard developed by Anthropic (creators of Claude) to connect AI assistants with external data sources and tools. It allows models like Claude to access up-to-date information and perform actions in external systems in a standardized way.
+There is no official YouTube MCP server from Google; this is a community project built on
+Google's public APIs.
 
-MCP functions as a "universal bridge" for AI, providing a standardized way for models to access various content repositories, business services, or applications.
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Choosing an auth mode](#choosing-an-auth-mode)
+- [Authorizing with OAuth](#authorizing-with-oauth)
+- [Claude Desktop configuration](#claude-desktop-configuration)
+- [Tools](#tools)
+- [Resources](#resources)
+- [Security model](#security-model)
+- [API quota](#api-quota)
+- [Configuration reference](#configuration-reference)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Requirements
 
-- Node.js v16 or higher
-- A YouTube API key (obtained from the Google Developer Console)
+- Node.js 20 or newer
+- A Google Cloud project with the **YouTube Data API v3** enabled
+  (plus the **YouTube Analytics API** if you want analytics tools)
 
 ## Installation
 
-1. Clone this repository:
 ```bash
 git clone https://github.com/Nocodeboy/youtube-mcp-server.git
 cd youtube-mcp-server
+npm install     # also builds via the prepare script
+cp .env.example .env
 ```
 
-2. Install dependencies:
-```bash
-npm install
-```
+Then edit `.env` — see the next section.
 
-3. Create a `.env` file in the project root and add your YouTube API key:
-```
-YOUTUBE_API_KEY=your_api_key_here
-```
+## Choosing an auth mode
 
-## Execution
+| | API key | OAuth 2.0 |
+|---|---|---|
+| Search, video and channel metadata | yes | yes |
+| Playlists (read) | public only | yours included |
+| Comments (read) | yes | yes |
+| Analytics | **no** | yes |
+| Transcripts | **no** | your own videos |
+| Writes | **no** | opt-in |
+| Setup | one key | client ID + consent flow |
 
-To start the server, run:
+Use an **API key** for read-only research. Use **OAuth** to touch your own channel. If both
+are configured, OAuth is used and the API key is the fallback when no token is stored yet.
 
-```bash
-npm start
-```
+**API key:** Google Cloud Console → APIs & Services → Credentials → Create credentials → API key.
 
-## Integration with Claude Desktop
+**OAuth:** Google Cloud Console → Credentials → Create credentials → OAuth client ID →
+application type **Desktop app**. Copy the client ID and secret into `.env`.
 
-To use this MCP server with Claude Desktop, add the following configuration to your `claude_desktop_config.json` file (usually located in `%APPDATA%\Claude\` on Windows or `~/Library/Application Support/Claude/` on macOS):
+## Authorizing with OAuth
+
+1. Start the server (or let Claude Desktop start it) and call the `get_auth_url` tool.
+2. Open the URL it prints and approve access.
+3. Your browser lands on the redirect URI and will most likely show **a connection error.
+   That is expected** — nothing is listening there. Copy the full URL from the address bar;
+   it contains `?code=...`.
+4. Call `authorize` with that URL.
+
+The token is written to `token.json` with `0600` permissions and refreshed automatically from
+then on. You do not need to repeat this after a restart.
+
+Re-run the flow whenever you change `YOUTUBE_ALLOW_WRITES` or `YOUTUBE_ENABLE_CAPTIONS`: those
+flags change which OAuth scope is requested, and an existing token keeps its old scope.
+
+## Claude Desktop configuration
+
+`claude_desktop_config.json` lives in `%APPDATA%\Claude\` on Windows and
+`~/Library/Application Support/Claude/` on macOS.
+
+Read-only, with an API key:
 
 ```json
 {
   "mcpServers": {
     "youtube": {
       "command": "node",
-      "args": ["path/to/youtube-mcp-server/index.js"],
+      "args": ["/absolute/path/to/youtube-mcp-server/dist/index.js"],
       "env": {
-        "YOUTUBE_API_KEY": "your_api_key_here"
+        "YOUTUBE_API_KEY": "your_api_key"
       }
     }
   }
 }
 ```
 
-Replace `"path/to/youtube-mcp-server/index.js"` with the absolute path to the `index.js` file, and `"your_api_key_here"` with your YouTube API key.
+Full access to your own channel:
 
-## Available Tools
-
-### 1. Search Videos
-
-Search for videos on YouTube based on a query.
-
-```
-search_videos
-```
-
-Parameters:
-- `query` (string, required): Search terms
-- `maxResults` (number, optional): Maximum number of results (between 1 and 50)
-- `pageToken` (string, optional): Token to get the next page of results
-
-### 2. Get Video Details
-
-Get detailed information about a specific video.
-
-```
-get_video_details
+```json
+{
+  "mcpServers": {
+    "youtube": {
+      "command": "node",
+      "args": ["/absolute/path/to/youtube-mcp-server/dist/index.js"],
+      "env": {
+        "YOUTUBE_CLIENT_ID": "your_client_id",
+        "YOUTUBE_CLIENT_SECRET": "your_client_secret",
+        "YOUTUBE_ALLOW_WRITES": "true",
+        "YOUTUBE_ENABLE_CAPTIONS": "true"
+      }
+    }
+  }
+}
 ```
 
-Parameters:
-- `videoId` (string, required): YouTube video ID
+Point `args` at `dist/index.js`, not `src/`. Run `npm run build` after pulling changes.
 
-### 3. Get Channel Details
+## Tools
 
-Get detailed information about a specific channel.
+Tools marked **write** are only advertised when `YOUTUBE_ALLOW_WRITES=true`. Tools marked
+**captions** need `YOUTUBE_ENABLE_CAPTIONS=true`. Tools marked **OAuth** never work with an
+API key alone.
 
-```
-get_channel_details
-```
+### Authentication
 
-Parameters:
-- `channelId` (string, required): YouTube channel ID
+| Tool | Description |
+|---|---|
+| `get_auth_url` | Generate the Google consent URL |
+| `authorize` | Exchange the redirect URL (or bare code) for tokens |
+| `auth_status` | Report auth mode, scopes, and which capabilities are live |
 
-### 4. Search Channels
+`auth_status` is the right first call whenever something fails.
 
-Search for channels on YouTube based on a query.
+### Search
 
-```
-search_channels
-```
+| Tool | Description |
+|---|---|
+| `search_videos` | Search videos; filter by channel, date and sort order |
+| `search_channels` | Search channels |
 
-Parameters:
-- `query` (string, required): Search terms
-- `maxResults` (number, optional): Maximum number of results (between 1 and 50)
-- `pageToken` (string, optional): Token to get the next page of results
+Both cost 100 quota units per call — see [API quota](#api-quota).
 
-## Available Resources
+### Videos
 
-- `youtube://popular/videos`: List of currently popular videos on YouTube
+| Tool | Description |
+|---|---|
+| `get_video_details` | Metadata, stats and status for up to 50 IDs in one call |
+| `update_video` | **write** Title, description, tags, privacy. Supports `dryRun` |
+| `set_thumbnail` | **write** Set a custom thumbnail from an HTTPS URL |
 
-## Usage Examples
+### Channels
 
-With Claude Desktop, you can ask questions like:
+| Tool | Description |
+|---|---|
+| `get_channel_details` | Look up a channel by ID or by handle (`@name`) |
+| `get_my_channel` | **OAuth** Your own channel, including the uploads playlist ID |
+| `list_channel_videos` | A channel's uploads, newest first — 1 quota unit, not 100 |
 
-- "Search for Python programming videos"
-- "Show me details of video with ID dQw4w9WgXcQ"
-- "Search for cooking-related channels"
-- "Give me information about the GoogleDevelopers channel"
-- "What are the most popular videos right now?"
+### Playlists
 
-## Getting a YouTube API Key
+| Tool | Description |
+|---|---|
+| `list_playlists` | Playlists for a channel, or your own |
+| `list_playlist_items` | Videos in a playlist |
+| `create_playlist` | **write** Create a playlist (private by default) |
+| `add_playlist_item` | **write** Add a video, optionally at a position |
+| `remove_playlist_item` | **write** Remove an entry by `playlistItemId` |
 
-To get a YouTube API key:
+### Comments
 
-1. Go to the [Google Developer Console](https://console.developers.google.com/)
-2. Create a new project (or select an existing one)
-3. In the sidebar, select "API Library"
-4. Search for "YouTube Data API v3" and enable it
-5. In the sidebar, select "Credentials"
-6. Click on "Create credentials" and select "API key"
-7. Copy the generated key and use it in your `.env` file or in the Claude Desktop configuration
+| Tool | Description |
+|---|---|
+| `list_comments` | Comment threads with replies, by relevance or time |
+| `reply_to_comment` | **write** Post a public reply as the authorized channel |
+
+### Captions
+
+| Tool | Description |
+|---|---|
+| `list_captions` | **OAuth** **captions** Caption tracks on one of your videos |
+| `get_transcript` | **OAuth** **captions** Download a track as text, SRT or VTT |
+
+The YouTube API only exposes caption tracks for videos on the **authorized channel**. There is
+no supported way to pull transcripts for arbitrary third-party videos, and this server does not
+scrape them.
+
+### Analytics
+
+All read-only, OAuth only, and scoped to your own channel.
+
+| Tool | Description |
+|---|---|
+| `analytics_channel_summary` | Headline metrics, optionally by day or month |
+| `analytics_top_videos` | Rank your videos by a metric, with titles resolved |
+| `analytics_video_metrics` | Metrics for one video, optionally by day |
+| `analytics_traffic_sources` | Where views came from |
+| `analytics_demographics` | Age and gender split |
+
+## Resources
+
+- `youtube://popular/videos` — the most popular videos right now
+
+## Security model
+
+This server lets a language model act on a real YouTube channel, while that same model reads
+text written by the public — video descriptions and viewer comments. The defaults are built
+around that.
+
+**Writes are opt-in.** With `YOUTUBE_ALLOW_WRITES` unset, mutating tools are not registered, so
+they never appear in the model's tool list. A runtime guard blocks them regardless, as
+defence in depth.
+
+**Scopes follow capability.** Read-only setups request `youtube.readonly`. The write scope
+`youtube.force-ssl` is only requested when writes or captions are enabled. The broad
+`auth/youtube` scope — which permits deleting videos and comments — is **never** requested.
+
+**Tokens are private.** `token.json` is written and re-chmodded to `0600`. Refreshed tokens are
+persisted, so a rotated refresh token is not silently lost.
+
+**Writes are logged.** Every mutation, allowed *or blocked*, appends a JSON line to the audit
+log with a timestamp, the tool, the target and the outcome. Blocked entries are the interesting
+ones: they tell you something tried to write when it should not have.
+
+**Thumbnail URLs are vetted.** `set_thumbnail` resolves the hostname and refuses private,
+loopback and link-local addresses — including `169.254.169.254`, the cloud metadata endpoint —
+before opening a socket. Redirects are followed manually and re-checked at every hop, the
+content type must be JPEG or PNG, and the body is capped at 2 MB.
+
+One residual risk worth naming: a hostname could be re-resolved to a different address between
+the check and the connection (DNS rebinding). Closing that completely means pinning the socket
+to the vetted IP, which Node's `fetch` does not expose.
+
+**Treat tool output as data.** Anything from `list_comments`, video descriptions or channel
+metadata is attacker-controlled text. It is never an instruction.
+
+## API quota
+
+The YouTube Data API gives you 10,000 units per day by default, resetting at midnight Pacific.
+
+| Operation | Cost |
+|---|---|
+| `search_videos`, `search_channels` | **100** |
+| Most reads (`videos.list`, `playlistItems.list`, …) | 1 |
+| Writes (`update_video`, `reply_to_comment`, …) | ~50 |
+
+That is about **100 searches per day** and nothing else. Prefer `list_channel_videos` over
+`search_videos` when you want a channel's uploads: same result, one hundredth of the cost.
+Quota exhaustion is reported as a distinct error with this explanation attached.
+
+Analytics API quota is separate and far more generous.
+
+## Configuration reference
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `YOUTUBE_API_KEY` | — | Read-only access to public data |
+| `YOUTUBE_CLIENT_ID` | — | OAuth client ID |
+| `YOUTUBE_CLIENT_SECRET` | — | OAuth client secret |
+| `YOUTUBE_REDIRECT_URI` | `http://localhost:8790/oauth2callback` | Must match the OAuth client |
+| `YOUTUBE_ALLOW_WRITES` | `false` | Enable mutating tools |
+| `YOUTUBE_ENABLE_CAPTIONS` | `false` | Enable caption tools (widens scope) |
+| `YOUTUBE_TOKEN_PATH` | `./token.json` | Where the OAuth token lives |
+| `YOUTUBE_AUDIT_LOG` | next to the token | Append-only write log |
+| `YOUTUBE_MAX_THUMBNAIL_BYTES` | `2097152` | Thumbnail size cap |
+
+Flags accept `true`, `1`, `yes`, `on` (case-insensitive). Anything else is false, so writes
+never turn on by accident.
 
 ## Troubleshooting
 
-If you encounter errors, check:
+**Call `auth_status` first.** It reports the auth mode, the granted scopes, and exactly which
+capabilities are available.
 
-1. That you have installed all dependencies with `npm install`
-2. That your YouTube API key is valid
-3. That you have the YouTube Data API v3 enabled in your Google project
-4. That you are using Node.js version 16 or higher
-5. If you use Claude Desktop, check the logs in `%APPDATA%\Claude\logs\` (Windows) or `~/Library/Logs/Claude/` (macOS)
+| Symptom | Cause |
+|---|---|
+| "requires OAuth, and no valid token is loaded" | Not authorized yet — run `get_auth_url` |
+| "cannot be used with an API key" | Analytics needs OAuth |
+| "Write operations are disabled" | Set `YOUTUBE_ALLOW_WRITES=true` and re-authorize |
+| "Caption tools are disabled" | Set `YOUTUBE_ENABLE_CAPTIONS=true` and re-authorize |
+| "quota exhausted" | Out of daily units; resets at midnight Pacific |
+| Writes fail after enabling the flag | The stored token still has the read-only scope — re-authorize |
+| No tools appear in Claude Desktop | `args` must point at `dist/index.js`; run `npm run build` |
 
-## Contributions
+Claude Desktop logs: `%APPDATA%\Claude\logs\` (Windows), `~/Library/Logs/Claude/` (macOS).
+This server writes diagnostics to stderr, which is where they land.
 
-Contributions are welcome. You can collaborate in several ways:
+## Development
 
-1. Reporting bugs or issues
-2. Suggesting new features
-3. Sending pull requests with improvements or fixes
-4. Improving documentation
+```bash
+npm run build       # compile to dist/
+npm run dev         # tsc --watch
+npm run typecheck   # types only, no emit
+npm test            # builds, then runs the suite
+```
+
+```
+src/
+  index.ts          entry point, signal handling
+  server.ts         MCP wiring, tool registration and filtering
+  config.ts         environment parsing, scope selection
+  context.ts        API clients, auth state, write guard
+  auth/             OAuth client and token storage
+  lib/              errors, formatters, SSRF-safe fetch, audit log
+  tools/            one module per tool group
+```
+
+Tests cover the SSRF address checks, token file permissions, scope selection, the write guard,
+and an end-to-end stdio handshake against the built server.
+
+## Contributing
+
+Bug reports, feature suggestions and pull requests are welcome. Please run `npm test` before
+opening a PR.
 
 ## Connect & Support
 
-- Follow me on X (Twitter): [@Nocodeboy](https://x.com/Nocodeboy)
-- If you find this project useful and want to show your support:
+- X (Twitter): [@Nocodeboy](https://x.com/Nocodeboy)
 
 <a href="https://www.buymeacoffee.com/germanhuertas" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for more details.
+MIT — see [LICENSE](LICENSE).
