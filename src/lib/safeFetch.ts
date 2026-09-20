@@ -22,14 +22,86 @@ function isPrivateIPv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * Expand any legal IPv6 spelling into its eight 16-bit groups.
+ *
+ * The same address has many textual forms: `::1`, `0:0:0:0:0:0:0:1` and
+ * `0000:...:0001` are one address, and an IPv4-mapped address can be written with a dotted
+ * tail (`::ffff:127.0.0.1`) or in pure hex (`::ffff:7f00:1`). Matching on the text is how a
+ * loopback address slips past a blocklist, so normalize first and decide on the numbers.
+ */
+function expandIPv6(ip: string): number[] | null {
+  let addr = ip.toLowerCase().split("%")[0] ?? ""; // drop any zone index
+  if (!addr) return null;
+
+  // A dotted IPv4 tail occupies the final two groups; convert it to hex first.
+  const dotted = addr.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (dotted?.[1]) {
+    const octets = dotted[1].split(".").map(Number);
+    if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
+      return null;
+    }
+    const [a, b, c, d] = octets as [number, number, number, number];
+    const hex = `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+    addr = addr.slice(0, dotted.index) + hex;
+  }
+
+  const halves = addr.split("::");
+  if (halves.length > 2) return null;
+
+  const parse = (part: string): number[] | null => {
+    if (!part) return [];
+    const out: number[] = [];
+    for (const group of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      out.push(parseInt(group, 16));
+    }
+    return out;
+  };
+
+  const head = parse(halves[0] ?? "");
+  if (head === null) return null;
+
+  if (halves.length === 1) return head.length === 8 ? head : null;
+
+  const tail = parse(halves[1] ?? "");
+  if (tail === null) return null;
+
+  const gap = 8 - head.length - tail.length;
+  if (gap < 0) return null;
+  return [...head, ...Array<number>(gap).fill(0), ...tail];
+}
+
+const ipv4FromGroups = (g6: number, g7: number): string =>
+  [(g6 >> 8) & 0xff, g6 & 0xff, (g7 >> 8) & 0xff, g7 & 0xff].join(".");
+
 function isPrivateIPv6(ip: string): boolean {
-  const addr = ip.toLowerCase().split("%")[0] ?? "";
-  if (addr === "::1" || addr === "::") return true;
-  if (addr.startsWith("fe80")) return true; // link-local
-  if (/^f[cd]/.test(addr)) return true; // unique local
-  // IPv4-mapped (::ffff:a.b.c.d) inherits the IPv4 verdict.
-  const mapped = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped?.[1]) return isPrivateIPv4(mapped[1]);
+  const g = expandIPv6(ip);
+  if (!g || g.length !== 8) return true; // unparseable — refuse
+
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = g as [
+    number, number, number, number, number, number, number, number,
+  ];
+
+  // ::/128 (unspecified) and ::1/128 (loopback), in any spelling.
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0) {
+    return g7 === 0 || g7 === 1;
+  }
+  // ::ffff:0:0/96 — IPv4-mapped. Inherits the embedded address's verdict.
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) {
+    return isPrivateIPv4(ipv4FromGroups(g6, g7));
+  }
+  // ::/96 — deprecated IPv4-compatible, still routable text in some stacks.
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    return isPrivateIPv4(ipv4FromGroups(g6, g7));
+  }
+  // 64:ff9b::/96 — NAT64 well-known prefix; the low 32 bits are the real IPv4 destination.
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    return isPrivateIPv4(ipv4FromGroups(g6, g7));
+  }
+  if ((g0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((g0 & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+  if ((g0 & 0xff00) === 0xff00) return true; // ff00::/8 multicast
   return false;
 }
 

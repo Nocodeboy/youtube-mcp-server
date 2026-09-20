@@ -28,6 +28,31 @@ describe("isPrivateAddress", () => {
     }
   });
 
+  it("refuses loopback however it is spelled (regression: SSRF bypass)", () => {
+    // The first version matched IPv6 on text, so only the literal '::1' and the dotted
+    // IPv4-mapped form were caught. These all denote 127.0.0.1 or a private v4 address.
+    for (const ip of [
+      "0:0:0:0:0:0:0:1",
+      "0000:0000:0000:0000:0000:0000:0000:0001",
+      "::ffff:7f00:1", // ::ffff:127.0.0.1 in hex
+      "::ffff:a00:1", // ::ffff:10.0.0.1
+      "::ffff:c0a8:101", // ::ffff:192.168.1.1
+      "::ffff:a9fe:a9fe", // ::ffff:169.254.169.254 — cloud metadata
+      "::7f00:1", // IPv4-compatible loopback
+      "64:ff9b::7f00:1", // NAT64 to loopback
+      "ff02::1", // multicast
+      "::1%eth0", // zone index
+    ]) {
+      expect(isPrivateAddress(ip), `${ip} should be private`).toBe(true);
+    }
+  });
+
+  it("still accepts public IPv6, including mapped public v4", () => {
+    for (const ip of ["2606:4700::1111", "::ffff:8.8.8.8", "::ffff:808:808"]) {
+      expect(isPrivateAddress(ip), `${ip} should be public`).toBe(false);
+    }
+  });
+
   it("refuses anything that is not an IP", () => {
     expect(isPrivateAddress("not-an-ip")).toBe(true);
     expect(isPrivateAddress("")).toBe(true);

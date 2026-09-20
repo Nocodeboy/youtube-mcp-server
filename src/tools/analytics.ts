@@ -94,31 +94,41 @@ export const analyticsTools: ToolDefinition[] = [
       });
 
       const report = formatAnalyticsReport(res.data);
-      // Analytics identifies videos by ID only, which is unreadable on its own. One extra
-      // videos.list call (1 quota unit) turns the report into something a human can scan.
+      // Analytics identifies videos by ID only, which is unreadable on its own. videos.list
+      // accepts 50 IDs per call, so page through them: annotating only the first 50 would
+      // label the rest "(unavailable)" and imply they were deleted.
       const ids = report.rows
         .map((r) => (r as Record<string, unknown>).video)
-        .filter((v): v is string => typeof v === "string")
-        .slice(0, 50);
+        .filter((v): v is string => typeof v === "string");
 
-      if (ids.length > 0) {
+      const titles = new Map<string, string | null | undefined>();
+      for (let i = 0; i < ids.length; i += 50) {
         try {
-          const details = await ctx.requireYouTube().videos.list({ part: ["snippet"], id: ids });
-          const titles = new Map(
-            (details.data.items ?? []).map((v) => [v.id, v.snippet?.title] as const),
-          );
-          report.rows = report.rows.map((row) => {
-            const r = row as Record<string, unknown>;
-            const id = typeof r.video === "string" ? r.video : undefined;
-            return {
-              ...r,
-              title: id ? (titles.get(id) ?? "(unavailable)") : undefined,
-              url: id ? `https://www.youtube.com/watch?v=${id}` : undefined,
-            };
+          const details = await ctx.requireYouTube().videos.list({
+            part: ["snippet"],
+            id: ids.slice(i, i + 50),
           });
+          for (const v of details.data.items ?? []) {
+            if (v.id) titles.set(v.id, v.snippet?.title);
+          }
         } catch {
           // Titles are a nicety; a failure here must not lose the analytics data.
+          break;
         }
+      }
+
+      if (titles.size > 0) {
+        report.rows = report.rows.map((row) => {
+          const r = row as Record<string, unknown>;
+          const id = typeof r.video === "string" ? r.video : undefined;
+          if (!id) return r;
+          return {
+            ...r,
+            // A looked-up ID that came back empty really is gone; one never looked up is not.
+            ...(titles.has(id) ? { title: titles.get(id) ?? "(unavailable)" } : {}),
+            url: `https://www.youtube.com/watch?v=${id}`,
+          };
+        });
       }
       return json(report);
     },

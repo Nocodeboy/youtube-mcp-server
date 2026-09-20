@@ -229,9 +229,11 @@ defence in depth.
 **Tokens are private.** `token.json` is written and re-chmodded to `0600`. Refreshed tokens are
 persisted, so a rotated refresh token is not silently lost.
 
-**Writes are logged.** Every mutation, allowed *or blocked*, appends a JSON line to the audit
-log with a timestamp, the tool, the target and the outcome. Blocked entries are the interesting
-ones: they tell you something tried to write when it should not have.
+**Writes are logged.** Every mutation appends a JSON line to the audit log with a timestamp,
+the tool, the target and the outcome. The guard also logs `blocked` entries, though in normal
+operation you will not see any: with writes disabled the tools are never registered, so nothing
+reaches the guard. A `blocked` line means a write was attempted through a path that should not
+exist — worth investigating.
 
 **Thumbnail URLs are vetted.** `set_thumbnail` resolves the hostname and refuses private,
 loopback and link-local addresses — including `169.254.169.254`, the cloud metadata endpoint —

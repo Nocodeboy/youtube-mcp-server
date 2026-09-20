@@ -72,3 +72,39 @@ describe("credential detection", () => {
     ).toThrow(/Invalid environment/);
   });
 });
+
+describe("blank values (regression: .env.example broke startup)", () => {
+  it("treats an empty string as unset, not as an invalid value", () => {
+    // `cp .env.example .env` then filling in only the API key leaves the OAuth keys as "".
+    // That used to fail validation and kill the process before the transport started.
+    const c = loadConfig({
+      YOUTUBE_API_KEY: "key",
+      YOUTUBE_CLIENT_ID: "",
+      YOUTUBE_CLIENT_SECRET: "",
+      YOUTUBE_REDIRECT_URI: "",
+      YOUTUBE_TOKEN_PATH: "",
+      YOUTUBE_ALLOW_WRITES: "",
+    } as NodeJS.ProcessEnv);
+
+    expect(c.apiKey).toBe("key");
+    expect(c.hasOAuthCredentials).toBe(false);
+    expect(c.allowWrites).toBe(false);
+    expect(c.redirectUri).toBe("http://localhost:8790/oauth2callback");
+  });
+
+  it("works with the OAuth half filled in and the API key blank", () => {
+    const c = loadConfig({
+      YOUTUBE_API_KEY: "",
+      YOUTUBE_CLIENT_ID: "id",
+      YOUTUBE_CLIENT_SECRET: "secret",
+    } as NodeJS.ProcessEnv);
+    expect(c.hasOAuthCredentials).toBe(true);
+    expect(c.apiKey).toBeUndefined();
+  });
+
+  it("still rejects a genuinely malformed value", () => {
+    expect(() =>
+      loadConfig({ YOUTUBE_REDIRECT_URI: "nonsense" } as NodeJS.ProcessEnv),
+    ).toThrow(/Invalid environment/);
+  });
+});

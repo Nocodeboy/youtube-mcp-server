@@ -120,6 +120,22 @@ describe("server over stdio", () => {
     }
   });
 
+  it("explains that an OAuth-only tool needs OAuth, rather than failing at Google", async () => {
+    const { client, close } = await connect(baseEnv()); // api-key mode
+    try {
+      const result = await client.callTool({ name: "get_my_channel", arguments: {} });
+      expect(result.isError).toBe(true);
+
+      // The guard must fire locally. Without it the call reached Google and came back as a
+      // bare 401 that says nothing about how to fix it.
+      const text = (result.content as Array<{ text: string }>)[0]!.text;
+      expect(text).toMatch(/OAuth/);
+      expect(text).toMatch(/get_auth_url/);
+    } finally {
+      await close();
+    }
+  });
+
   it("exposes the popular videos resource", async () => {
     const { client, close } = await connect(baseEnv());
     try {

@@ -100,8 +100,15 @@ export const videoTools: ToolDefinition[] = [
         };
         snippet.description = args.description;
       }
-      if (args.tags !== undefined) {
-        changes.tags = { from: snippet.tags ?? [], to: args.tags };
+      // Compare before recording a change: re-sending identical tags would otherwise defeat
+      // the "no changes" short-circuit and spend ~50 quota units on a no-op update.
+      const currentTags = snippet.tags ?? [];
+      const sameTags =
+        args.tags !== undefined &&
+        currentTags.length === args.tags.length &&
+        currentTags.every((t, i) => t === args.tags[i]);
+      if (args.tags !== undefined && !sameTags) {
+        changes.tags = { from: currentTags, to: args.tags };
         snippet.tags = args.tags;
       }
       if (args.privacyStatus !== undefined && args.privacyStatus !== status.privacyStatus) {

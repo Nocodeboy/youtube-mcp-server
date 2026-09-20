@@ -4,7 +4,7 @@ import { YouTubeContext } from "./context.js";
 import { allTools, type ToolDefinition } from "./tools/index.js";
 import { formatVideo } from "./lib/format.js";
 import { errorResult } from "./lib/result.js";
-import { isProtocolError } from "./lib/errors.js";
+import { isProtocolError, NotAuthorizedError, WriteDisabledError } from "./lib/errors.js";
 
 export const SERVER_NAME = "youtube-mcp-server";
 export const SERVER_VERSION = "3.0.0";
@@ -63,12 +63,21 @@ export function createServer(ctx: YouTubeContext): McpServer {
       },
       async (args: unknown): Promise<CallToolResult> => {
         try {
+          // Checked per call, not at registration: authorizing mid-session flips the mode,
+          // and a tool hidden at startup would stay unusable until a restart. Without this
+          // an OAuth-only tool in API-key mode failed with a raw Google 401 instead of an
+          // error naming the fix.
+          if (tool.oauthOnly && ctx.authMode !== "oauth") {
+            throw new NotAuthorizedError(`'${tool.name}'`);
+          }
           return await tool.handler(args ?? {}, ctx);
         } catch (error) {
           // Protocol-level problems belong in the error channel so the client can react to
           // the code. Everything else is a tool failure the model should see and can act on.
           if (isProtocolError(error)) throw error;
-          if (tool.write) {
+          // A blocked write was already recorded by the guard that rejected it; logging the
+          // same attempt again would double-count the entries the log exists to surface.
+          if (tool.write && !(error instanceof WriteDisabledError)) {
             await ctx.audit.record({
               tool: tool.name,
               outcome: "failed",

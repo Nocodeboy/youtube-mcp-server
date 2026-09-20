@@ -13,16 +13,31 @@ const boolish = z
   .string()
   .transform((v) => ["1", "true", "yes", "on"].includes(v.trim().toLowerCase()));
 
+/**
+ * Treat a blank value as absent.
+ *
+ * `.env.example` ships every key present and empty so people can see what exists, and dotenv
+ * hands those through as "". Without this, filling in only one auth mode — exactly what the
+ * README tells you to do — made config validation fail and the process exit before the
+ * transport ever started.
+ */
+const blankAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema);
+
 const EnvSchema = z.object({
-  YOUTUBE_API_KEY: z.string().min(1).optional(),
-  YOUTUBE_CLIENT_ID: z.string().min(1).optional(),
-  YOUTUBE_CLIENT_SECRET: z.string().min(1).optional(),
-  YOUTUBE_REDIRECT_URI: z.string().url().default("http://localhost:8790/oauth2callback"),
-  YOUTUBE_TOKEN_PATH: z.string().optional(),
-  YOUTUBE_AUDIT_LOG: z.string().optional(),
-  YOUTUBE_ALLOW_WRITES: boolish.default(false),
-  YOUTUBE_ENABLE_CAPTIONS: boolish.default(false),
-  YOUTUBE_MAX_THUMBNAIL_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+  YOUTUBE_API_KEY: blankAsUnset(z.string().min(1).optional()),
+  YOUTUBE_CLIENT_ID: blankAsUnset(z.string().min(1).optional()),
+  YOUTUBE_CLIENT_SECRET: blankAsUnset(z.string().min(1).optional()),
+  YOUTUBE_REDIRECT_URI: blankAsUnset(
+    z.string().url().default("http://localhost:8790/oauth2callback"),
+  ),
+  YOUTUBE_TOKEN_PATH: blankAsUnset(z.string().min(1).optional()),
+  YOUTUBE_AUDIT_LOG: blankAsUnset(z.string().min(1).optional()),
+  YOUTUBE_ALLOW_WRITES: blankAsUnset(boolish.default(false)),
+  YOUTUBE_ENABLE_CAPTIONS: blankAsUnset(boolish.default(false)),
+  YOUTUBE_MAX_THUMBNAIL_BYTES: blankAsUnset(
+    z.coerce.number().int().positive().default(2 * 1024 * 1024),
+  ),
 });
 
 export type Config = {
