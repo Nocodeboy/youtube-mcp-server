@@ -21,10 +21,21 @@ export class WriteDisabledError extends ToolError {
 }
 
 export class NotAuthorizedError extends ToolError {
-  constructor(what: string) {
+  /**
+   * `mode` sharpens the message. Being in API-key mode is a different problem from having no
+   * credentials at all: the key works fine for public reads and will never work here, so
+   * saying which tools need OAuth and why saves a round of confused retrying.
+   */
+  constructor(what: string, mode?: "api-key" | "unauthenticated") {
     super(
-      `${what} requires OAuth, and no valid token is loaded.`,
-      "Run 'get_auth_url', open the URL, then pass the redirect URL to 'authorize'.",
+      mode === "api-key"
+        ? `${what} needs OAuth and cannot work with an API key.`
+        : `${what} requires OAuth, and no valid token is loaded.`,
+      mode === "api-key"
+        ? "An API key only reads public data. Analytics, captions, your own channel and all " +
+          "writes act on behalf of a channel owner, so they need OAuth: set " +
+          "YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET, then run 'get_auth_url'."
+        : "Run 'get_auth_url', open the URL, then pass the redirect URL to 'authorize'.",
     );
     this.name = "NotAuthorizedError";
   }

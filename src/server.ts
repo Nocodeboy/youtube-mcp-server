@@ -1,10 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { YouTubeContext } from "./context.js";
 import { allTools, type ToolDefinition } from "./tools/index.js";
 import { formatVideo } from "./lib/format.js";
 import { errorResult } from "./lib/result.js";
-import { isProtocolError, NotAuthorizedError, WriteDisabledError } from "./lib/errors.js";
+import {
+  describeError,
+  isProtocolError,
+  NotAuthorizedError,
+  WriteDisabledError,
+} from "./lib/errors.js";
 
 export const SERVER_NAME = "youtube-mcp-server";
 export const SERVER_VERSION = "3.0.0";
@@ -68,7 +73,10 @@ export function createServer(ctx: YouTubeContext): McpServer {
           // an OAuth-only tool in API-key mode failed with a raw Google 401 instead of an
           // error naming the fix.
           if (tool.oauthOnly && ctx.authMode !== "oauth") {
-            throw new NotAuthorizedError(`'${tool.name}'`);
+            throw new NotAuthorizedError(
+              `'${tool.name}'`,
+              ctx.authMode === "api-key" ? "api-key" : "unauthenticated",
+            );
           }
           return await tool.handler(args ?? {}, ctx);
         } catch (error) {
@@ -109,11 +117,22 @@ function registerResources(server: McpServer, ctx: YouTubeContext): void {
       mimeType: "application/json",
     },
     async (uri) => {
-      const res = await ctx.requireYouTube().videos.list({
-        part: ["snippet", "statistics", "contentDetails"],
-        chart: "mostPopular",
-        maxResults: 10,
-      });
+      // Resources have no isError channel, so a failure travels as a protocol error. Map it
+      // first: otherwise Google's bare message arrives with no hint about how to fix it.
+      const res = await ctx
+        .requireYouTube()
+        .videos.list({
+          part: ["snippet", "statistics", "contentDetails"],
+          chart: "mostPopular",
+          maxResults: 10,
+        })
+        .catch((error: unknown) => {
+          const { message, hint } = describeError(error);
+          throw new McpError(
+            ErrorCode.InternalError,
+            hint ? `${message} (${hint})` : message,
+          );
+        });
       return {
         contents: [
           {
