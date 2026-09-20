@@ -240,6 +240,11 @@ loopback and link-local addresses — including `169.254.169.254`, the cloud met
 before opening a socket. Redirects are followed manually and re-checked at every hop, the
 content type must be JPEG or PNG, and the body is capped at 2 MB.
 
+IPv6 addresses are expanded to their eight groups and judged numerically rather than matched
+as text, because one address has many spellings: `::1`, `0:0:0:0:0:0:0:1` and `::ffff:7f00:1`
+are the same host, and a text-matching check lets the last two through. IPv4-mapped,
+IPv4-compatible and NAT64 forms inherit the verdict of the address they embed.
+
 One residual risk worth naming: a hostname could be re-resolved to a different address between
 the check and the connection (DNS rebinding). Closing that completely means pinning the socket
 to the vetted IP, which Node's `fetch` does not expose.
