@@ -20,7 +20,17 @@ async function connect(env: Record<string, string>) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [ENTRY],
-    env: { PATH: process.env.PATH ?? "", ...env },
+    env: {
+      PATH: process.env.PATH ?? "",
+      // Forward the sandbox's TLS and proxy settings. Without them a subprocess that
+      // makes a real API call dies on certificate validation before reaching Google,
+      // which looks like a bug in the server rather than a missing environment variable.
+      ...(process.env.NODE_EXTRA_CA_CERTS
+        ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }
+        : {}),
+      ...(process.env.HTTPS_PROXY ? { HTTPS_PROXY: process.env.HTTPS_PROXY } : {}),
+      ...env,
+    },
     stderr: "pipe",
   });
   await client.connect(transport);
