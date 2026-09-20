@@ -320,7 +320,8 @@ npm run typecheck   # types only, no emit
 npm test            # builds, then runs the suite
 ```
 
-The suite is offline by default. Set `YOUTUBE_API_KEY` and `npm test` additionally runs
+The suite is offline by default. Set `YOUTUBE_API_KEY` — or `YOUTUBE_API_VIA_PROXY=true`
+where a gateway attaches the key for you — and `npm test` additionally runs
 `test/live.test.ts` against the real API: real video and channel reads, the projections this
 README promises, the not-found path and the popular-videos resource. It is read-only — an API
 key cannot write — and costs about 105 quota units per run, almost all of it the single
@@ -338,8 +339,8 @@ src/
 ```
 
 Tests cover the SSRF address checks, token file permissions, scope selection, the write guard,
-an end-to-end stdio handshake against the built server, and — when a key is present — the live
-API checks above.
+an end-to-end stdio handshake against the built server, and — when a key is present, locally
+or via the proxy — the live API checks above.
 
 ## Contributing
 

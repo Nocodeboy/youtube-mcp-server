@@ -9,13 +9,19 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 /**
  * Checks that hit the real YouTube API.
  *
- * Skipped unless YOUTUBE_API_KEY is set, so `npm test` stays offline by default. Everything
- * here is read-only and uses an API key, which cannot write even if a tool tried.
+ * Skipped unless YOUTUBE_API_KEY is set, or YOUTUBE_API_VIA_PROXY says an egress proxy
+ * attaches the key on the way out, so `npm test` stays offline by default. Either way the
+ * run is read-only and keyed: no credential here can write even if a tool tried.
  *
  * Quota: one search (100 units) plus a handful of 1-unit reads, so about 105 units of the
  * 10,000/day budget per run. Keep it that way — do not add more searches.
  */
 const API_KEY = process.env.YOUTUBE_API_KEY;
+/** Same truthiness the server's own config uses, so the two agree on what "on" means. */
+const VIA_PROXY = ["1", "true", "yes", "on"].includes(
+  (process.env.YOUTUBE_API_VIA_PROXY ?? "").trim().toLowerCase(),
+);
+const LIVE = Boolean(API_KEY) || VIA_PROXY;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = path.join(ROOT, "dist", "index.js");
 
@@ -28,7 +34,7 @@ let client: Client;
 const textOf = (r: { content: unknown }) => (r.content as Array<{ text: string }>)[0]!.text;
 const jsonOf = (r: { content: unknown }) => JSON.parse(textOf(r));
 
-describe.skipIf(!API_KEY)("live YouTube API (read-only)", () => {
+describe.skipIf(!LIVE)("live YouTube API (read-only)", () => {
   beforeAll(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-live-"));
     client = new Client({ name: "live-test", version: "1.0.0" });
@@ -42,7 +48,12 @@ describe.skipIf(!API_KEY)("live YouTube API (read-only)", () => {
             ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }
             : {}),
           ...(process.env.HTTPS_PROXY ? { HTTPS_PROXY: process.env.HTTPS_PROXY } : {}),
-          YOUTUBE_API_KEY: API_KEY!,
+          // Exactly one credential mode: a key of our own, or none at all and the proxy
+          // supplies it. Sending both would put a second key on a request that already
+          // carries the injected one.
+          ...(API_KEY
+            ? { YOUTUBE_API_KEY: API_KEY }
+            : { YOUTUBE_API_VIA_PROXY: "true" }),
           YOUTUBE_TOKEN_PATH: path.join(dir, "token.json"),
           YOUTUBE_AUDIT_LOG: path.join(dir, "audit.log"),
         },
@@ -162,8 +173,9 @@ describe.skipIf(!API_KEY)("live YouTube API (read-only)", () => {
   });
 });
 
-describe.skipIf(API_KEY)("live suite", () => {
-  it("is skipped without YOUTUBE_API_KEY", () => {
+describe.skipIf(LIVE)("live suite", () => {
+  it("is skipped without YOUTUBE_API_KEY or YOUTUBE_API_VIA_PROXY", () => {
     expect(API_KEY).toBeUndefined();
+    expect(VIA_PROXY).toBe(false);
   });
 });
